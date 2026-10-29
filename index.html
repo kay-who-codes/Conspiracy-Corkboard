@@ -343,7 +343,7 @@ var KINDS = {
     "The Conspiracy Theory Swap Meet","The Q&A That Had No Questions",
     "The Town Picture Day Redo","The Great Lawnmower Standoff","The Extra Chromosome of the Snowman",
     "The Town Meeting That Lasted 11 Seconds","The Unscheduled Ice Cream Truck",
-    "The Accidental Quilt," "The Great Fake News Roundup"
+    "The Accidental Quilt","The Great Fake News Roundup"
   ]
 };
 var LABEL = {person:"Person", object:"Object", event:"Event"};
@@ -493,7 +493,7 @@ document.addEventListener("keydown", function(e){ if(e.key==="Escape" && !docume
 
 (function(){
   var uniq = 0; for(var k in KINDS) uniq += KINDS[k].length;
-  
+
   document.getElementById("count").textContent = uniq + " written cards · 1 in 10 draws is a blank";
 })();
 newHand();
