@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Conspiracy Corkboard</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: one column. Hand of six case-file cards on top, a pin-to-board overlay with red string below it. */
+:root{
+  --bg:#15120f; --panel:#1f1a15; --panel2:#2a231c; --line:#3a3027;
+  --text:#efe6d8; --muted:#a39785; --string:#e5483f; --paper:#f1e9d6; --ink:#1d1812;
+  --cork:#3a2b1d; --cork2:#2f2318;
+  --c-person:#7fb2ff; --c-object:#6fd6a8; --c-event:#ff9a6b;
+  color-scheme:dark;
+  --mono:ui-monospace,"SF Mono","Courier New",Courier,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:auto}
+body{
+  margin:0; background:var(--bg); color:var(--text); font-family:var(--sans); font-size:16px; line-height:1.4;
+  padding-block:20px 48px;
+  padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px));
+}
+.wrap{max-width:480px; margin:0 auto; display:flex; flex-direction:column; gap:16px}
+header{text-align:center}
+h1{margin:0; font-family:var(--mono); font-size:1.35rem; letter-spacing:.14em; text-transform:uppercase; text-wrap:balance}
+h1 span{color:var(--string)}
+.sub{margin:6px 0 0; color:var(--muted); font-size:.85rem}
+.count{margin:4px 0 0; color:#6c6254; font-size:.7rem; font-family:var(--mono); letter-spacing:.05em}
+.hint{font-family:var(--mono); font-size:.72rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); display:flex; justify-content:space-between; gap:8px}
+.hand{display:flex; flex-direction:column; gap:10px}
+.card{
+  position:relative; display:flex; align-items:center; gap:12px; text-align:left; width:100%;
+  background:var(--panel); border:1px solid var(--line); border-left:4px solid var(--cat); border-radius:6px;
+  padding:14px 14px 14px 12px; color:var(--text); font:inherit; cursor:pointer; min-height:62px;
+  -webkit-tap-highlight-color:transparent;
+}
+.card:focus-visible{outline:2px solid var(--text); outline-offset:2px}
+.card.sel{background:var(--panel2); border-color:var(--cat); box-shadow:0 0 0 1px var(--cat) inset}
+.tag{font-family:var(--mono); font-size:.65rem; letter-spacing:.12em; text-transform:uppercase; color:var(--cat); width:52px; flex:none}
+.card .txt{flex:1; min-width:0; font-size:1.05rem; font-weight:600; overflow-wrap:anywhere}
+.card input{
+  flex:1; min-width:0; background:transparent; border:0; border-bottom:1px dashed var(--muted); color:var(--text);
+  font:inherit; font-size:1.05rem; font-weight:600; padding:2px 0; outline:none;
+}
+.card input:focus{border-bottom-color:var(--text)}
+.badge{
+  flex:none; width:26px; height:26px; border-radius:50%; background:var(--cat); color:var(--ink);
+  font-family:var(--mono); font-weight:700; font-size:.85rem; display:grid; place-items:center; visibility:hidden;
+}
+.card.sel .badge{visibility:visible}
+.person{--cat:var(--c-person)} .object{--cat:var(--c-object)} .event{--cat:var(--c-event)}
+.actions{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+.btn{
+  border:1px solid var(--line); background:var(--panel2); color:var(--text); border-radius:8px; padding:14px 12px;
+  font:inherit; font-weight:600; cursor:pointer; min-height:50px;
+}
+.btn.main{grid-column:1/-1; background:var(--string); border-color:var(--string); color:#fff; font-size:1.05rem}
+.btn:disabled{opacity:.35; cursor:default}
+.btn:focus-visible{outline:2px solid var(--text); outline-offset:2px}
+.note{margin:0; color:var(--muted); font-size:.8rem; text-align:center}
+
+/* board overlay */
+.board-wrap{
+  position:fixed; inset:0; z-index:50; overflow-y:auto; overscroll-behavior:contain;
+  background:
+    radial-gradient(circle at 20% 15%, rgba(255,255,255,.04) 0 2px, transparent 3px) 0 0/34px 34px,
+    radial-gradient(circle at 70% 60%, rgba(0,0,0,.18) 0 2px, transparent 3px) 0 0/27px 27px,
+    linear-gradient(160deg,var(--cork),var(--cork2));
+  padding-block:calc(20px + env(safe-area-inset-top,0px)) calc(24px + env(safe-area-inset-bottom,0px));
+  padding-left:max(16px,env(safe-area-inset-left,0px)); padding-right:max(16px,env(safe-area-inset-right,0px));
+}
+.board{position:relative; max-width:480px; margin:0 auto; display:flex; flex-direction:column; gap:34px; padding:56px 0 20px}
+.board svg{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible; z-index:2}
+.board path{fill:none; stroke:var(--string); stroke-width:3; stroke-linecap:round; filter:drop-shadow(0 2px 1px rgba(0,0,0,.5))}
+.board-top{position:absolute; top:0; left:0; right:0; display:flex; justify-content:space-between; align-items:center; z-index:3}
+.board-top .label{font-family:var(--mono); font-size:.75rem; letter-spacing:.14em; text-transform:uppercase; color:#d8c7aa}
+.round{
+  width:44px; height:44px; border-radius:50%; background:rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.2);
+  color:var(--text); font:inherit; font-size:1.1rem; cursor:pointer;
+}
+.round:focus-visible,.timer:focus-visible{outline:2px solid var(--text); outline-offset:2px}
+.pcard{
+  position:relative; z-index:1; background:var(--paper); color:var(--ink); padding:18px 18px 22px; border-radius:3px;
+  box-shadow:0 10px 20px rgba(0,0,0,.45); width:84%; transform:rotate(var(--rot));
+}
+.pcard:nth-child(odd){align-self:flex-start} .pcard:nth-child(even){align-self:flex-end}
+.pin{position:absolute; top:-7px; left:50%; width:16px; height:16px; margin-left:-8px; border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#ff8f86,#b3261e 70%); box-shadow:0 3px 4px rgba(0,0,0,.5); z-index:3}
+.pcard .kind{font-family:var(--mono); font-size:.68rem; letter-spacing:.16em; text-transform:uppercase; color:#7a6a52}
+.pcard .big{margin-top:6px; font-family:var(--mono); font-weight:700; font-size:1.55rem; line-height:1.15; overflow-wrap:anywhere; text-wrap:balance}
+.pcard .stamp{margin-top:10px; height:3px; width:46px; background:var(--cat)}
+.board-foot{display:flex; justify-content:center; align-items:center; gap:12px; margin-top:6px; position:relative; z-index:3}
+.timer{
+  background:rgba(0,0,0,.5); color:var(--text); border:1px solid rgba(255,255,255,.2); border-radius:999px;
+  padding:10px 18px; font-family:var(--mono); font-size:.95rem; cursor:pointer; font-variant-numeric:tabular-nums; min-height:44px;
+}
+.timer.low{color:#ff8e86; border-color:#ff8e86}
+.say{font-family:var(--mono); font-size:.75rem; color:#d8c7aa; text-align:center; letter-spacing:.06em; margin:0}
+@media (prefers-reduced-motion:no-preference){
+  .board path{stroke-dasharray:var(--len); stroke-dashoffset:var(--len); animation:draw .7s ease-out forwards}
+  .board path:nth-of-type(2){animation-delay:.5s}
+  .pcard{animation:drop .35s ease-out both} .pcard:nth-child(2){animation-delay:.12s} .pcard:nth-child(3){animation-delay:.24s}
+}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes drop{from{opacity:0;transform:translateY(-14px) rotate(var(--rot))}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Conspiracy <span>Corkboard</span></h1>
+    <p class="sub">Draw six. Pin three. Connect the dots.</p>
+    <p class="count" id="count"></p>
+  </header>
+
+  <div class="hint"><span>Your hand</span><span id="selCount">0/3 picked</span></div>
+  <div class="hand" id="hand"></div>
+
+  <div class="actions">
+    <button class="btn main" id="pinBtn" type="button">Pin to corkboard</button>
+    <button class="btn" id="redrawBtn" type="button">Redraw picked</button>
+    <button class="btn" id="newBtn" type="button">New hand</button>
+  </div>
+  <p class="note">Pick any three cards in the order you want them linked. Turns and scoring happen at the table.</p>
+</div>
+
+<div class="board-wrap" id="boardWrap" hidden>
+  <div class="board" id="board">
+    <div class="board-top">
+      <span class="label">Case file</span>
+      <button class="round" id="closeBtn" type="button" aria-label="Close corkboard">✕</button>
+    </div>
+    <svg id="strings" aria-hidden="true"></svg>
+    <div id="pcards" style="display:contents"></div>
+    <div class="board-foot">
+      <button class="timer" id="timer" type="button">⏱ 20s pitch</button>
+    </div>
+    <p class="say">Explain how they are connected.</p>
+  </div>
+</div>
+
+<script>
+var KINDS = {
+  person: [
+    // Ordinary townsfolk with suspicious undertones
+    "The Mayor","Your Neighbor Dave","A Substitute Teacher","The Ice Cream Man","A Retired Magician",
+    "Your Dentist","The Mail Carrier","A Pigeon Whisperer","The Lunch Lady","A Lighthouse Keeper",
+    "Your Landlord","The Local Weatherman","A Traveling Salesman","The Night Janitor","A Competitive Baker",
+    "The Neighborhood Watch","A Suspiciously Tan Cousin","The Town Librarian","A Disgraced Mime",
+    "The Pizza Delivery Guy","A Retired Spy","The Substitute Priest","Your Yoga Instructor",
+    "A Cheerleading Coach","The Crossing Guard","A Very Calm Toddler","The Hotel Concierge","Grandma",
+    "A Professional Clown","The Hot Dog Vendor","A Mattress Salesman","The School Principal",
+    "A Man Named Gary","The Taxi Driver","Your Personal Trainer","A Lifeguard","The Bingo Caller",
+    "A Cat Burglar","The Lost Tourist","A Birdwatcher","A Flat Earth Society Member",
+    "The Moon Landing Director","Bigfoot's Lawyer","A Retired Alien Abductee","The Man in Black",
+    "An Area 51 Janitor","A Time-Traveling Tourist","The Weather Machine Operator","A Crop Circle Artist",
+    "The Real Elvis","A Whistleblower Pigeon","The Illuminati Intern","A Man Who Knows Too Much",
+    "The Secret Government Mime","A Mandela Effect Victim","An Underground Bunker Salesman",
+    "The Atlantis Tour Guide","A Paranoid Taxidermist","The Dinosaur Museum Curator",
+    "A Failed Perpetual Motion Inventor",
+
+    // New additions — everyday people, small-town archetypes
+    "The HOA President","A Part-Time UFO Spotter","The Sunday School Teacher","Your Ex's New Partner",
+    "The Bartender Who's Heard It All","A Conspiracy Podcast Host","The Neighborhood Gossip",
+    "A Mysterious Newcomer","The Retired Postmaster","A Freelance Fact-Checker",
+    "The Aquarium Security Guard","The Town's Only Notary","A Competitive Bridge Player",
+    "The Slightly Too-Friendly Pharmacist","The Man Who Mows His Lawn at Midnight",
+    "A Disillusioned Intern","The Local News Anchor","The Snow Plow Driver",
+    "A Self-Proclaimed Prophet","The Mall Santa (Off-Season)","The Rival Mayor",
+    "A Very Insistent Surveyor","The Piano Tuner","A Ventriloquist Without a Dummy",
+    "The Seed Packet Salesman","The Museum Night Guard","A Gnome Collector",
+    "The Neighborhood Busybody","A Former Child Star","The Antique Dealer",
+    "A Part-Time Psychic","The Library's Head Shusher","A Man With Too Many Cats",
+    "The Annual Fair Judge","A Suspiciously Prepared Scout Leader","The Insurance Adjuster",
+    "A World-Renowned Procrastinator","The Town Crier (Volunteer)","A Retired Tugboat Captain",
+
+    // Government / institutional figures
+    "A Rogue Census Taker","The Understudy Park Ranger","A Decommissioned Astronaut",
+    "The Assistant to the Assistant Mayor","A Whistleblower in Witness Protection",
+    "The Water Department Inspector","A Deep State Middle Manager","The Local Election Auditor",
+    "A Parked Car Observer","The Recycling Coordinator","A Retired Smokejumper",
+    "The Town's Cryptozoology Consultant","A Recovering Bureaucrat","The Flagpole Inspector",
+    "The Emergency Siren Tester","A Public Records Clerk","The Municipal Pool Inspector",
+    "A Railroad Crossing Technician","The Fire Hydrant Painter","A Very Lost Census Drone Operator",
+
+    // Esoteric / cryptid / sci-fi figures
+    "A Cryptid Sighting Witness","The Reticent Mothman Fan","A Bigfoot B&B Owner",
+    "The Second Gunman's Granddaughter","A Chemtrail Debunker","The Moon's Publicist",
+    "An Alien Liaison (Self-Appointed)","The Hollow Earth Tour Operator",
+    "A Psychic Hotline Temp","The Ghost of a Former Mayor","A Reincarnated Pharaoh",
+    "The Loch Ness Photographer","A Vampire Nutritionist","The Real Zodiac Killer (Allegedly)",
+    "A Time Loop Survivor","The Man Who Solved the Bermuda Triangle","A Dimension-Hopper's Landlord",
+    "The Last Atlantis Resident","A UFO Insurance Agent","The Conspiracy Theorist's Therapist",
+    "A Government-Approved Skeptic","The Reverse Vampire","A Pigeon Implant Technician",
+    "The Chief Illuminati Recruiter","A Recovering Alien Hybrid","The Bigfoot Track Photographer",
+
+    // Wildcards and absurdist figures
+    "A Very Confident Impostor","The World's Tallest Man's Shorter Brother",
+    "A Man With Three Alibis","The Nostradamus Estate Executor",
+    "A Sentient Chorus of Whispers","The Town's Designated Skeptic",
+    "A Barn Owl Enthusiast","The Last Honest Salesman","A Mirror Universe Defector",
+    "The Annual Piñata Champion","A Town Hall Whisperer","The Loose-Lipped Barber",
+    "A Publicly Funded Mystic","The Nosy 911 Dispatcher","A Crooked Ferris Wheel Operator",
+    "The Unknown Twin","A Recovering Conspiracy Influencer","The Neighbor Who Returns Everything"
+  ],
+  object: [
+    // Everyday objects with a twist
+    "A Garden Gnome","The Office Microwave","A Rubber Duck","A Suspicious Casserole",
+    "The Last Slice of Pizza","A Traffic Cone","A Singing Fish","The Community Fridge",
+    "A Paper Shredder","A Tin Foil Hat","The Vending Machine","A Mysterious Briefcase",
+    "A Haunted Teapot","The Lost Sock","A Pool Noodle","The Self-Checkout","A Dusty VHS Tape",
+    "A Novelty Mug","The Neighbor's Hedge","A Lava Lamp","The Church Bell","A Jar of Pickles",
+    "The Wi-Fi Router","A Squeaky Door","The Town Fountain","A Bag of Marbles","The Garage Sale Lamp",
+    "A Fake Mustache","The Giant Wheel of Cheese","A Pink Flamingo Lawn Ornament","The Library Stamp",
+    "A Broken Umbrella","The Ice Machine","A Golden Spatula","The Karaoke Machine","A Wind Chime",
+    "The Water Cooler","A Beach Ball","The Emergency Exit Sign","A Ceramic Frog",
+    "Fake Dinosaur Bones","An Infinite Energy Machine","The Flat Earth Map","A Chemtrail Plane",
+    "The Hollow Moon","A Bird-Shaped Surveillance Drone","The Bermuda Triangle",
+    "A Secret Underground Bunker","A Pyramid Capstone","A Mysterious Black Helicopter",
+    "The Roswell Weather Balloon","A Free Energy Generator","A Mind-Control Hat",
+    "The Missing Hard Drive","A Suppressed Miracle Cure","A Blurry Loch Ness Photograph",
+    "The Lost City of Atlantis","A Time Cube","The Secret Society Handshake","A Fake Mars Rover",
+
+    // New additions — suspicious mundane items
+    "A Single Unmatched Glove","The Mystery Key","A Leaky Thermos","A Potholder With a Secret Pocket",
+    "The Neighbor's Security Camera","A Suspiciously Heavy Paperweight","An Unmarked Flash Drive",
+    "A Handwritten Ransom Note (Draft)","The Rec Room Jukebox","A Slightly Haunted Mirror",
+    "The Community Garden Scarecrow","A Junk Drawer Full of Batteries","An Overdue Library Book",
+    "A Crockpot Left Running","The Squeaky Third Stair","A Nesting Doll (One Too Many)",
+    "A Bag of Unlabeled Keys","The Office Coffee Fund Jar","A Snow Globe That Won't Settle",
+    "A Whiteboard With One Word Erased","The Block Party Permit","A Suspiciously New Fence",
+    "A Metal Detector (Beeping)","The Bulletin Board Flyer","A Polaroid With No Owner",
+    "A Bucket of Bolts (Extra)","The Rec Center Bulletin Board","A Door With No Building",
+    "An Alarm Clock Set for 3:33","The Town Time Capsule","A Commemorative Plate (Misprinted)",
+
+    // Technology and gadgetry
+    "A Burner Phone","A Smart Speaker That Listens","A Drone With No Registration",
+    "The Office Printer (Possessed)","A USB Stick Labeled 'DO NOT OPEN'","An Old Fax Machine",
+    "A Geiger Counter (Clicking)","A Walkie-Talkie on Channel 9","The Family Camcorder",
+    "A Satellite Dish Pointed at Nothing","An Automatic Lawnmower That Roams","A Fitbit for a Dog",
+    "A Hacked Baby Monitor","A Pacemaker (Recalled)","An Unplugged Server","A 'Smart' Fridge",
+    "A Voice Recorder Left On","A Signal Jammer in a Lunchbox","The Neighbor's Mystery Antenna",
+
+    // Cryptid and conspiracy artifacts
+    "A Cast of a Bigfoot Footprint","A UFO Landing Pad (DIY)","The Roswell 'Weather Balloon' Receipt",
+    "A Crop Circle Stencil","A Mothman Feather","The Chupacabra Feeding Bowl",
+    "A Bigfoot Hair Sample","The Loch Ness Depth Gauge","A Pigeon With a Tiny Backpack",
+    "The Illuminati Newsletter","A Decoder Ring (Missing the Key)","The Kennedy Conspiracy Flowchart",
+    "A Stamped 'Classified' Folder (Empty)","An Alien Autopsy Receipt","The Moon Hoax Storyboard",
+    "A Free Energy Prototype (Unplugged)","The Chemtrail Canister","A Tin Foil Hat (Deluxe)",
+    "The Flat Earth Trophy","A Crop Circle Copyright Notice","A Pyramid Scheme (Literal)",
+    "An Atlantean Souvenir Coin","A Hollow Earth Elevator Button","A Time Traveler's ID Badge",
+    "The Mandela Effect Eraser","A Lizard Person's Contact Lens","A Bird That Isn't Real",
+    "The Ghost Division Rolodex","A Weather Control Remote (Missing Batteries)",
+
+    // Absurdist and cursed items
+    "A Cursed Yard Sale Painting","A Jar of 'Just Air'","The World's Second-Largest Ball of Twine",
+    "A Slightly Cursed Amulet","An Origami Swan That Won't Unfold","The Mayor's Secret Snack Drawer",
+    "A Crying Lawn Statue","A Suspiciously Warm Rock","A Very Heavy Rock (For Thinking)",
+    "A Mysterious Spiral Notebook","An Unlabeled Prescription Bottle","A Fake Plant (Sentient)",
+    "The 'Break Glass in Case of Emergency' Box (Empty)","A Sourdough Starter With a Name",
+    "A Porcelain Doll That Moved","The Trophy No One Remembers Winning",
+    "A Snow Globe of a Town That Doesn't Exist","A 'Do Not Touch' Sign (Moved)",
+    "A Mysterious White Van's Spare Tire","A Sealed Envelope Marked 'Later'",
+    "A Ouija Board With Extra Letters","The Friendly Neighborhood Pothole"
+  ],
+  event: [
+    // Everyday small-town oddities
+    "The Great Blackout of Tuesday","The Bake Sale Incident","A Mysterious Power Outage",
+    "The Town Picnic","The Missing Thursday","A Sudden Fog","The Annual Chili Cook-Off",
+    "The Parking Lot Standoff","A Very Long Wedding Toast","The Great Pigeon Migration",
+    "The Spelling Bee Scandal","A Surprise Fire Drill","The Midnight Garage Sale",
+    "The Fireworks Mix-Up","The School Play Disaster","A Strange Humming Sound",
+    "The Great Sandwich Shortage","The Fake Fire Alarm","The Neighborhood Yard Sale",
+    "A Total Eclipse of the Lunch Hour","The Retirement Party","The Karaoke Night Meltdown",
+    "The Library Overdue Crisis","A Sudden Shortage of Spoons","The Pothole That Appeared Overnight",
+    "The Tuesday Parade","The Time Everyone Yawned at Once","The Great Elevator Stall",
+    "The Annual Pie Contest","The Uncanny Silence at 3 p.m.","The Mysterious Confetti Storm",
+    "The Bus That Never Came","The Cheese Festival","The Late Pizza Delivery",
+    "The Wrong Number Epidemic","A Very Loud Hiccup","The Town Hall Meeting","The Church Raffle",
+    "The Dog Show Upset","The 3 A.M. Doorbell","The Moon Landing Filming","The Dinosaur Cover-Up",
+    "The Great Flat Earth Reveal","The Suppression of Free Energy","The Roswell Incident",
+    "The Disappearance of Atlantis","The Staged Eclipse","The Birds Aren't Real Revelation",
+    "The Y2K Cover-Up","The Area 51 Raid","The Secret Pyramid Meeting",
+    "The Bermuda Triangle Vanishing","The Mandela Effect Incident","The Chemtrail Spraying",
+    "The Time Traveler's Warning","The Fake Mars Landing","The Secret Society Banquet",
+    "The Hollow Earth Expedition","The Bigfoot Sighting Everyone Ignored","The Day the Maps Changed",
+
+    // New additions — social and civic oddities
+    "The Great Recycling Bin Swap","The HOA Emergency Meeting","The Bake Sale Price Fixing Scandal",
+    "The Missing Stop Sign","The Unexpected Flash Mob","The Great Lawn Gnome Migration",
+    "The Town Council Filibuster","The Annual Census Miscount","The Bingo Card Scandal",
+    "The Simultaneous Sneezing Fit","The Great Pumpkin Shortage","The Time the Clocks Disagreed",
+    "The Neighborhood Watch Watch Party","The Third Street Traffic Reroute",
+    "The Great Scavenger Hunt Cover-Up","The Town Motto Change","The Meridian Line Dispute",
+    "The Time Capsule Discrepancy","The Snow Day That Wasn't","The Great Haircut Boycott",
+    "The Vending Machine Rebellion","The Potluck Leftovers Crisis","The Great Fence Height Debate",
+    "The Pothole Beauty Pageant","The Parallel Parking Championship","The Great Firework Damp Squib",
+
+    // Weird phenomena and anomalies
+    "A Reverse Rainbow","The Hum That Only Kids Hear","The Day the Shadow Went Wrong",
+    "The Sudden Gravity Dip","The Light That Follows You","The Clock That Ran Backwards",
+    "The Week of Deja Vu","The Vanishing of Mrs. Henderson's Cat","The Humming Over the Hills",
+    "The Sky That Looked Upside Down","The Great Coin Flip Anomaly",
+    "The Field That Grows in a Circle","The Rain That Fell Up",
+    "The Silence Over the Schoolyard","The 47-Second Time Skip",
+    "The Night the Stars Rearranged","The Two Suns Report","The Town Photo That Changed",
+
+    // Conspiracy events with bureaucratic flavor
+    "The Official Denial","The Press Conference That Never Was","The Wrong Budget Leak",
+    "The Sealed Court Records Bonfire","The Misprinted Newspaper","The Emergency Alert SNAFU",
+    "The Sworn Testimony of a Pigeon","The Subcommittee on Unusual Matters",
+    "The Great Redaction Day","The Whistleblower's Farewell Cookout",
+    "The Incriminating Photocopy Jam","The Evacuation That Was a Drill",
+    "The Midnight Council Session","The Great Document Shredding",
+    "The Public Hearing Gone Sideways","The Sign That Said Too Much",
+    "The Anonymous Tip Hotline Glitch","The Requisition of All Staplers",
+    "The Gag Order Paper Airplane","The Testimony of the Fax Machine",
+
+    // Cryptid, sci-fi, and apocalyptic near-misses
+    "The Second UFO Sighting (This Week)","The Bigfoot Block Party",
+    "The Bermuda Triangle Bus Route","The Time Loop That Lasted a Day",
+    "The Dimension That Door Opened To","The Great Crop Circle Contest",
+    "The Alien Bake Sale","The Parallel Universe Swap Meet",
+    "The Loch Ness Photo Op","The Mothman Library Visit",
+    "The Hollow Earth Yard Sale","The Day Aliens Endorsed a Brand",
+    "The Time Traveler's Shopping Spree","The Clone Reunion Picnic",
+    "The Mars Rover 'Found' Photo","The Chemtrail Hot Air Balloon Festival",
+    "The Illuminati Bake Sale","The Mandela Effect Support Group",
+    "The Ghost Census","The Atlantean Reunion","The Bird Drone Migration",
+    "The Bigfoot Yard Sale","The Roswell Family Reunion","The Moon Hoax Reenactment",
+
+    // Absurdist and chaotic
+    "The Day Everyone Wore the Same Shirt","The Great Sentence Fragments",
+    "The Unexplained Applause","The Nap That Lasted Three Days",
+    "The Great Sock Pairing Ceremony","The Town's First and Only Riot (of Laughter)",
+    "The Spontaneous Line Dance","The Unexpected Trombonist","The Great Jell-O Incident",
+    "The Mannequin Appreciation Day","The Simultaneous Eye Contact",
+    "The Conspiracy Theory Swap Meet","The Q&A That Had No Questions",
+    "The Town Picture Day Redo","The Great Lawnmower Standoff","The Extra Chromosome of the Snowman",
+    "The Town Meeting That Lasted 11 Seconds","The Unscheduled Ice Cream Truck",
+    "The Accidental Quilt," "The Great Fake News Roundup"
+  ]
+};
+var LABEL = {person:"Person", object:"Object", event:"Event"};
+var BLANK_CHANCE = 0.10; // any draw has a 1-in-10 chance of being a write-your-own card
+var HAND_PER_KIND = 2;
+
+function shuffle(a){ for(var i=a.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+function stripArticle(t){ return /^(A |The )/.test(t) && Math.random()<0.5 ? t.replace(/^(A |The )/,"") : t; }
+
+var decks = {};
+function buildDeck(kind){
+  var d = KINDS[kind].map(function(t){ return {kind:kind, text:stripArticle(t), blank:false}; });
+  return shuffle(d);
+}
+function draw(kind){
+  if(Math.random() < BLANK_CHANCE) return {kind:kind, text:"", blank:true};
+  if(!decks[kind] || !decks[kind].length) decks[kind] = buildDeck(kind);
+  return decks[kind].pop();
+}
+
+var hand = [];
+var picked = [];
+
+function newHand(){
+  hand = [];
+  ["person","object","event"].forEach(function(k){ for(var i=0;i<HAND_PER_KIND;i++) hand.push(draw(k)); });
+  shuffle(hand);
+  picked = [];
+  render();
+}
+function redrawPicked(){
+  if(!picked.length) return;
+  picked.forEach(function(idx){ hand[idx] = draw(hand[idx].kind); });
+  picked = [];
+  render();
+}
+function toggle(i){
+  var p = picked.indexOf(i);
+  if(p>-1) picked.splice(p,1); else if(picked.length<3) picked.push(i);
+  render();
+}
+
+function render(){
+  var el = document.getElementById("hand");
+  el.textContent = "";
+  hand.forEach(function(c,i){
+    var pos = picked.indexOf(i);
+    var b = document.createElement("div");
+    b.className = "card " + c.kind + (pos>-1 ? " sel" : "");
+    b.setAttribute("role","button"); b.tabIndex = 0;
+    b.setAttribute("aria-pressed", pos>-1 ? "true" : "false");
+    var tag = document.createElement("span"); tag.className="tag"; tag.textContent = LABEL[c.kind];
+    b.appendChild(tag);
+    if(c.blank){
+      var inp = document.createElement("input");
+      inp.type="text"; inp.placeholder="Write your own…"; inp.value=c.text; inp.maxLength=40;
+      inp.id = "blank-" + i + "-" + Math.random().toString(36).slice(2,6);
+      inp.setAttribute("aria-label","Write your own " + LABEL[c.kind].toLowerCase());
+      inp.addEventListener("input", function(){ c.text = inp.value; });
+      inp.addEventListener("click", function(e){ e.stopPropagation(); });
+      inp.addEventListener("keydown", function(e){ e.stopPropagation(); });
+      b.appendChild(inp);
+    } else {
+      var t = document.createElement("span"); t.className="txt"; t.textContent = c.text; b.appendChild(t);
+    }
+    var bd = document.createElement("span"); bd.className="badge"; bd.textContent = pos>-1 ? String(pos+1) : ""; b.appendChild(bd);
+    b.addEventListener("click", function(){ toggle(i); });
+    b.addEventListener("keydown", function(e){ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); toggle(i); } });
+    el.appendChild(b);
+  });
+  document.getElementById("selCount").textContent = picked.length + "/3 picked";
+  document.getElementById("pinBtn").disabled = picked.length!==3;
+  document.getElementById("redrawBtn").disabled = picked.length===0;
+}
+
+/* board */
+var timerId = null;
+function openBoard(){
+  if(picked.length!==3) return;
+  var holder = document.getElementById("pcards");
+  holder.textContent = "";
+  var rots = [-2.2, 1.8, -1.4];
+  picked.forEach(function(idx,n){
+    var c = hand[idx];
+    var d = document.createElement("div");
+    d.className = "pcard " + c.kind;
+    d.style.setProperty("--rot", rots[n]+"deg");
+    d.style.setProperty("--cat", "var(--c-"+c.kind+")");
+    var pin = document.createElement("span"); pin.className="pin";
+    var k = document.createElement("div"); k.className="kind"; k.textContent = LABEL[c.kind];
+    var big = document.createElement("div"); big.className="big"; big.textContent = c.text.trim() || "???";
+    var st = document.createElement("div"); st.className="stamp";
+    d.appendChild(pin); d.appendChild(k); d.appendChild(big); d.appendChild(st);
+    holder.appendChild(d);
+  });
+  document.getElementById("boardWrap").hidden = false;
+  document.getElementById("boardWrap").scrollTop = 0;
+  resetTimer();
+  requestAnimationFrame(function(){ requestAnimationFrame(drawStrings); });
+}
+function drawStrings(){
+  var board = document.getElementById("board");
+  var svg = document.getElementById("strings");
+  var pins = board.querySelectorAll(".pin");
+  var br = board.getBoundingClientRect();
+  svg.setAttribute("viewBox","0 0 "+br.width+" "+br.height);
+  svg.textContent = "";
+  var pts = [];
+  pins.forEach(function(p){ var r = p.getBoundingClientRect(); pts.push([r.left - br.left + r.width/2, r.top - br.top + r.height/2]); });
+  for(var i=0;i<pts.length-1;i++){
+    var a = pts[i], b = pts[i+1];
+    var midx = (a[0]+b[0])/2, midy = (a[1]+b[1])/2 + 26;
+    var path = document.createElementNS("http://www.w3.org/2000/svg","path");
+    path.setAttribute("d","M"+a[0]+" "+a[1]+" Q"+midx+" "+midy+" "+b[0]+" "+b[1]);
+    svg.appendChild(path);
+    var len = Math.ceil(path.getTotalLength());
+    path.style.setProperty("--len", len);
+  }
+}
+function closeBoard(){ document.getElementById("boardWrap").hidden = true; resetTimer(); }
+
+function resetTimer(){
+  if(timerId){ clearInterval(timerId); timerId = null; }
+  var t = document.getElementById("timer");
+  t.textContent = "⏱ 20s pitch"; t.classList.remove("low");
+}
+function toggleTimer(){
+  var t = document.getElementById("timer");
+  if(timerId){ resetTimer(); return; }
+  var left = 20;
+  t.textContent = "⏱ " + left + "s";
+  timerId = setInterval(function(){
+    left--;
+    t.textContent = left>0 ? "⏱ " + left + "s" : "Time's up";
+    if(left<=5) t.classList.add("low");
+    if(left<=0){ clearInterval(timerId); timerId = null; try{ if(navigator.vibrate) navigator.vibrate(200); }catch(e){} }
+  },1000);
+}
+
+document.getElementById("pinBtn").addEventListener("click", openBoard);
+document.getElementById("redrawBtn").addEventListener("click", redrawPicked);
+document.getElementById("newBtn").addEventListener("click", newHand);
+document.getElementById("closeBtn").addEventListener("click", closeBoard);
+document.getElementById("timer").addEventListener("click", toggleTimer);
+window.addEventListener("resize", function(){ if(!document.getElementById("boardWrap").hidden) drawStrings(); });
+document.addEventListener("keydown", function(e){ if(e.key==="Escape" && !document.getElementById("boardWrap").hidden) closeBoard(); });
+
+(function(){
+  var uniq = 0; for(var k in KINDS) uniq += KINDS[k].length;
+  
+  document.getElementById("count").textContent = uniq + " written cards · 1 in 10 draws is a blank";
+})();
+newHand();
+</script>
+
+</body>
+</html>
